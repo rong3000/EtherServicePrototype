@@ -70,12 +70,28 @@ app.get('/api/user/:username', function (req, res) {
           console.log('dbRes.rows[0]', dbRes.rows[0]);
           contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance //chain specific
             (result) => {
-              console.log('show me the result of balance check', result.toString());
+              console.log('show me the result of balance check', result._hex);
               res.send(JSON.stringify({
                 'username': user,
                 'address': dbRes.rows[0].address,
-                'balance': result.toString()
+                'balance': result._hex
               }));
+
+              console.log("synch balance with db");
+                  let queryText = "UPDATE userwallet5 SET BALANCE = " + "\'" + result._hex + "\'" + " WHERE ADDRESS = " + "\'" + dbRes.rows[0].address + "\'" + ";";
+                  console.log("query text is ", queryText);
+
+                  pool.connect((err, client, done) => {
+                    if (err) throw err
+                    client.query(queryText, (err, res) => {
+                      done()
+                      if (err) {
+                        console.log(err.stack)
+                      } else {
+                        console.log('Balance synch to db without error', res.command, ' ', res.rowCount);
+                      }
+                    })
+                  })
             }
           );
         }
