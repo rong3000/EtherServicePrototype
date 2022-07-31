@@ -5,19 +5,21 @@ const path = require('path')
 
 const PORT = process.env.PORT || 3000
 
-const ethers = require("ethers");
-var bigNumber = ethers.BigNumber;
+const ethers = require("ethers");//chain specific
+var bigNumber = ethers.BigNumber;//chain specific
 
-let signer, contract, contractWithSigner;
-const CONTRACT_ID = "0x74Dc9e5beeF3D9ee614E6016aBA19c058B4D0c20"; //to be changed after contract deployed
+let signer, contract, contractWithSigner;//chain specific
+const CONTRACT_ID = "0x74Dc9e5beeF3D9ee614E6016aBA19c058B4D0c20"; //chain specific
+//to be changed after every contract deployed
 
-const Contract = require('./MyToken.json');
+const Contract = require('./MyToken.json');//chain specific
 
-const url = "https://polygon-mumbai.g.alchemy.com/v2/8_ArLwNTuvxrIAhPvAq9xBxRel3zc1pj";
-const provider = new ethers.providers.JsonRpcProvider(url);
+const url = "https://polygon-mumbai.g.alchemy.com/v2/8_ArLwNTuvxrIAhPvAq9xBxRel3zc1pj";//chain specific
+const provider = new ethers.providers.JsonRpcProvider(url);//chain specific
 
-contract = new ethers.Contract(CONTRACT_ID, Contract.abi, provider);
-// contractWithSigner = contract.connect(signer);
+contract = new ethers.Contract(CONTRACT_ID, Contract.abi, provider);//read only; chain specific
+// contractWithSigner = contract.connect(signer);//writable; chain specific
+// contractWithSigner.transfer('addres', '0x100');
 
 const app = express()
   .set('port', PORT)
@@ -66,7 +68,7 @@ app.get('/api/user/:username', function (req, res) {
         if (dbRes.rowCount > 0) {
           console.log("user in db");
           console.log('dbRes.rows[0]', dbRes.rows[0]);
-          contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance
+          contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance //chain specific
             (result) => {
               console.log('show me the result of balance check', result.toString());
               res.send(JSON.stringify({
