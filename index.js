@@ -1,0 +1,117 @@
+//express
+
+const express = require('express')
+const path = require('path')
+
+const PORT = process.env.PORT || 3000
+
+const ethers = require("ethers");
+var bigNumber = ethers.BigNumber;
+
+let signer, contract, contractWithSigner;
+const CONTRACT_ID = "0x74Dc9e5beeF3D9ee614E6016aBA19c058B4D0c20"; //to be changed after contract deployed
+
+const Contract = require('./MyToken.json');
+
+const url = "https://polygon-mumbai.g.alchemy.com/v2/8_ArLwNTuvxrIAhPvAq9xBxRel3zc1pj";
+const provider = new ethers.providers.JsonRpcProvider(url);
+
+contract = new ethers.Contract(CONTRACT_ID, Contract.abi, provider);
+// contractWithSigner = contract.connect(signer);
+
+const app = express()
+  .set('port', PORT)
+  .set('views', path.join(__dirname, 'views'))
+  .set('view engine', 'ejs')
+
+app.all('*', function (req, res, next) {
+  // res.header('Access-Control-Allow-Origin','https://poos.io'); //当允许携带cookies此处的白名单不能写’*’
+  // res.header('Access-Control-Allow-Origin','http://localhost:5000'); //当允许携带cookies此处的白名单不能写’*’
+  res.header('Access-Control-Allow-Origin', '*'); //当允许携带cookies此处的白名单不能写’*’
+  res.header('Access-Control-Allow-Headers', 'content-type,Content-Length, Authorization,Origin,Accept,X-Requested-With'); //允许的请求头
+  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, PUT'); //允许的请求方法
+  // res.header('Access-Control-Allow-Credentials',true);  //允许携带cookies
+  next();
+});
+
+// Static public files
+app.use(express.static(path.join(__dirname, 'public')))
+
+app.get('/', function (req, res) {
+  res.send('Managing user wallets');
+})
+
+const { Pool } = require('pg')
+
+const pool = new Pool({
+  connectionString: "postgres://aqnimfmyookfrc:1ed2357a4d5bf2826a3a9822a4d54a97be5bf43acdbe570b6ae9ccdbf3d7942b@ec2-107-22-122-106.compute-1.amazonaws.com:5432/ddrrkuok65vpk5",
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+app.get('/api/user/:username', function (req, res) {
+
+  let user = req.params.username.toString();
+  let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + user + "\'" + ";";
+  console.log("query text is ", queryText);
+  //search db for where username exist
+  pool.connect((err, client, done) => {
+    if (err) throw err
+    client.query(queryText, (err, dbRes) => {
+      done()
+      if (err) {
+        console.log(err.stack)
+      } else {
+        if (dbRes.rowCount > 0) {
+          console.log("user in db");
+          console.log('dbRes.rows[0]', dbRes.rows[0]);
+          contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance
+            (result) => {
+              console.log('show me the result of balance check', result.toString());
+              res.send(JSON.stringify({
+                'username': user,
+                'address': dbRes.rows[0].address,
+                'balance': result.toString()
+              }));
+            }
+          );
+        }
+        else {
+          console.log("user not in db, creating new user entry in db...");
+          let randomWallet = ethers.Wallet.createRandom();
+          console.log('username is ', user);
+          console.log('address is ', randomWallet.address);
+          console.log('private key is ', randomWallet.privateKey);
+          pool.connect((err, client, done) => {
+            if (err) throw err
+
+            client.query("INSERT INTO userwallet5 (username, address, private, balance) VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar);",
+              [user,
+              randomWallet.address,
+              randomWallet.privateKey,
+              '0x0'
+              ], (err, res) => {
+                done()
+                if (err) {
+                  console.log(err.stack)
+                } else {
+                  console.log('inserted without error', res.command, ' ', res.rowCount);
+                }
+              })
+          })
+
+          res.send(JSON.stringify({
+            'username': user,
+            'address': randomWallet.address,
+            'balance': '0x0'
+          }));
+        }
+      }
+    })
+  })
+})
+
+app.listen(app.get('port'), function () {
+  console.log('Node app is running on port', app.get('port'));
+})
