@@ -151,9 +151,18 @@ app.post('/api/transer/', function (req, res, next) {
           console.log("receiver in db, public address is", dbRes.rows[1].address);
           console.log("req.body.amount", req.body.amount);
 
-          let signer = new ethers.Wallet(dbRes.rows[0].private);//chain specific
-          let contractWithSigner = contract.connect(signer);//writable; chain specific
-          contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount);
+          let signer = new ethers.Wallet(dbRes.rows[0].private, provider);//chain specific
+          // let contractWithSigner = contract.connect(signer, provider);//writable; chain specific
+          let contractWithSigner = new ethers.Contract(CONTRACT_ID, Contract.abi, signer);//writable; chain specific
+          contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount).then(
+            (result) => {
+              console.log('result is ', result);
+            },
+            (error) => {
+              alert(error.error.message);
+              errorCaught = true;
+            }
+          );;
         }
         else {
           console.log('sender or receiver not in db')
