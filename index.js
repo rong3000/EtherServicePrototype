@@ -40,6 +40,29 @@ app.all('*', function (req, res, next) {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+async function synchBalance(address) {
+  contract.balanceOf(address).then( //check with chain what's user balance //chain specific
+    (result) => {
+      console.log('in synchBalance: show me the result of balance check', result._hex);
+      let queryText = "UPDATE userwallet5 SET BALANCE = " + "\'" + result._hex + "\'" + " WHERE ADDRESS = " + "\'" + address + "\'" + ";";
+      console.log("in synchBalance: query text is ", queryText);
+
+      pool.connect((err, client, done) => {
+        if (err) throw err
+        client.query(queryText, (err, res) => {
+          done()
+          if (err) {
+            console.log(err.stack)
+          } else {
+            console.log('in synchBalance: Balance synch to db without error', res.command, ' ', res.rowCount);
+          }
+        })
+      })
+    }
+  );
+}
+
+
 app.get('/', function (req, res) {
   res.send('Managing user wallets');
 })
@@ -56,6 +79,7 @@ const pool = new Pool({
 app.get('/api/user/:username', function (req, res) {
 
   let user = req.params.username.toString();
+
   let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + user + "\'" + ";";
   console.log("query text is ", queryText);
   //search db for where username exist
@@ -69,32 +93,11 @@ app.get('/api/user/:username', function (req, res) {
         if (dbRes.rowCount > 0) {
           console.log("user in db");
           console.log('dbRes.rows[0]', dbRes.rows[0]);
-          contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance //chain specific
-            (result) => {
-              console.log('show me the result of balance check', result._hex);
-              res.send(JSON.stringify({
-                'username': user,
-                'address': dbRes.rows[0].address,
-                'balance': result._hex
-              }));
-
-              console.log("synch balance with db");
-                  let queryText = "UPDATE userwallet5 SET BALANCE = " + "\'" + result._hex + "\'" + " WHERE ADDRESS = " + "\'" + dbRes.rows[0].address + "\'" + ";";
-                  console.log("query text is ", queryText);
-
-                  pool.connect((err, client, done) => {
-                    if (err) throw err
-                    client.query(queryText, (err, res) => {
-                      done()
-                      if (err) {
-                        console.log(err.stack)
-                      } else {
-                        console.log('Balance synch to db without error', res.command, ' ', res.rowCount);
-                      }
-                    })
-                  })
-            }
-          );
+          res.send(JSON.stringify({
+            'username': dbRes.rows[0].username,
+            'address': dbRes.rows[0].address,
+            'balance': dbRes.rows[0].balance
+          }));
         }
         else {
           console.log("user not in db, creating new user entry in db...");
@@ -107,9 +110,9 @@ app.get('/api/user/:username', function (req, res) {
 
             client.query("INSERT INTO userwallet5 (username, address, private, balance) VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar);",
               [user,
-              randomWallet.address,
-              randomWallet.privateKey,
-              '0x0'
+                randomWallet.address,
+                randomWallet.privateKey,
+                '0x0'
               ], (err, res) => {
                 done()
                 if (err) {
@@ -134,8 +137,8 @@ app.get('/api/user/:username', function (req, res) {
 app.post('/api/transer/', function (req, res, next) {
 
   let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + req.body.transferFrom + "\'" + "\n"
-  + "UNION ALL" + "\n"
-  + "SELECT * FROM userwallet5 WHERE username = " + "\'" + req.body.transferTo + "\'";
+    + "UNION ALL" + "\n"
+    + "SELECT * FROM userwallet5 WHERE username = " + "\'" + req.body.transferTo + "\'";
   console.log("query text is ", queryText);
   pool.connect((err, client, done) => {
     if (err) throw err
@@ -157,12 +160,47 @@ app.post('/api/transer/', function (req, res, next) {
           contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount).then(
             (result) => {
               console.log('result is ', result);
+              // return result.wait;
             },
             (error) => {
-              alert(error.error.message);
+              console.log('error', error.error.message);
               errorCaught = true;
             }
-          );;
+          ).then(
+            () => {
+              synchBalance(dbRes.rows[0].address);
+              synchBalance(dbRes.rows[1].address).then(
+                () => {
+                  let queryTextPostTransfer = "SELECT * FROM userwallet5 WHERE username = " + "\'" + dbRes.rows[1].username + "\'" + ";";
+                  console.log("after synch: query text post transfer is ", queryTextPostTransfer);
+                  //search db for where username exist
+                  pool.connect((err, client, done) => {
+                    if (err) throw err
+                    client.query(queryTextPostTransfer, (err, dbRes) => {
+                      done()
+                      if (err) {
+                        console.log(err.stack)
+                      } else {
+                        if (dbRes.rowCount > 0) {
+                          console.log("after synch: user in db");
+                          console.log('after synch: dbRes.rows[0]', dbRes.rows[0]);
+                          res.send(JSON.stringify({
+                            'after synch': 'yes',
+                            'username': dbRes.rows[0].username,
+                            'address': dbRes.rows[0].address,
+                            'balance': dbRes.rows[0].balance
+                          }));
+                        }
+                      }
+                    })
+                  })
+                }
+              );
+
+
+
+            }
+          );
         }
         else {
           console.log('sender or receiver not in db')
@@ -171,7 +209,8 @@ app.post('/api/transer/', function (req, res, next) {
     })
   })
 
-  res.send(JSON.stringify(req.body));
+
+
 })
 
 app.listen(app.get('port'), function () {
