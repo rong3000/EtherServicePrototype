@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000
 const ethers = require("ethers");//chain specific
 var bigNumber = ethers.BigNumber;//chain specific
 
-let signer, contract, contractWithSigner;//chain specific
+let contract;//chain specific
 const CONTRACT_ID = "0x74Dc9e5beeF3D9ee614E6016aBA19c058B4D0c20"; //chain specific
 //to be changed after every contract deployed
 
@@ -37,7 +37,8 @@ app.all('*', function (req, res, next) {
 });
 
 // Static public files
-app.use(express.static(path.join(__dirname, 'public')))
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
 app.get('/', function (req, res) {
   res.send('Managing user wallets');
@@ -128,6 +129,40 @@ app.get('/api/user/:username', function (req, res) {
       }
     })
   })
+})
+
+app.post('/api/transer/', function (req, res, next) {
+
+  let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + req.body.transferFrom + "\'" + "\n"
+  + "UNION ALL" + "\n"
+  + "SELECT * FROM userwallet5 WHERE username = " + "\'" + req.body.transferTo + "\'";
+  console.log("query text is ", queryText);
+  pool.connect((err, client, done) => {
+    if (err) throw err
+    client.query(queryText, (err, dbRes) => {
+      done()
+      if (err) {
+        console.log(err.stack)
+      } else {
+        if (dbRes.rowCount == 2) {
+          // console.log("sender in db, private key is", dbRes.rows[0].private);
+          console.log("sender in db, private key is", dbRes.rows[0].private);
+          console.log("sender in db, public address is", dbRes.rows[0].address);
+          console.log("receiver in db, public address is", dbRes.rows[1].address);
+          console.log("req.body.amount", req.body.amount);
+
+          let signer = new ethers.Wallet(dbRes.rows[0].private);//chain specific
+          let contractWithSigner = contract.connect(signer);//writable; chain specific
+          contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount);
+        }
+        else {
+          console.log('sender or receiver not in db')
+        }
+      }
+    })
+  })
+
+  res.send(JSON.stringify(req.body));
 })
 
 app.listen(app.get('port'), function () {
