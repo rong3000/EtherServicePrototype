@@ -55,11 +55,32 @@ async function synchBalance(address) {
             console.log(err.stack)
           } else {
             console.log('in synchBalance: Balance synch to db without error', res.command, ' ', res.rowCount);
+            return JSON.stringify({
+              'success': true
+            })
           }
         })
       })
     }
   );
+}
+
+async function contractTransfer(signer, res, req, dbRes) {
+  let contractWithSigner = new ethers.Contract(CONTRACT_ID, Contract.abi, signer);//writable; chain specific
+  const tx = await contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount);
+  console.log('tx hash is ', tx.hash);
+  res.send(JSON.stringify({
+    'transSubmitted': "success",
+    'transHash': tx.hash,
+    'etherscan': "https://mumbai.polygonscan.com/tx/" + tx.hash
+  }));
+  const receipt = await tx.wait();
+  console.log('receipt is ', receipt);
+  const synchSender = await synchBalance(dbRes.rows[0].address);
+  console.log('synchSender result is ', synchSender);
+  const synchReceiver = await synchBalance(dbRes.rows[1].address);
+  console.log('synchReceiver result is ', synchReceiver);
+  
 }
 
 
@@ -156,52 +177,72 @@ app.post('/api/transer/', function (req, res, next) {
 
           let signer = new ethers.Wallet(dbRes.rows[0].private, provider);//chain specific
           // let contractWithSigner = contract.connect(signer, provider);//writable; chain specific
-          let contractWithSigner = new ethers.Contract(CONTRACT_ID, Contract.abi, signer);//writable; chain specific
-          contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount).then(
-            (result) => {
-              console.log('result is ', result);
-              res.send(JSON.stringify({
-                'transSubmitted': "success",
-                'transHash': result.hash,
-                'etherscan': "https://mumbai.polygonscan.com/tx/" + result.hash
-              }));
-            },
-            (error) => {
-              console.log('error', error.error.message);
-              errorCaught = true;
-            }
-          )
+          // let contractWithSigner = new ethers.Contract(CONTRACT_ID, Contract.abi, signer);//writable; chain specific
+
+          contractTransfer(signer, res, req, dbRes);
+          // const tx = contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount);
+          // const receipt = tx.wait;
+          // console.log(receipt);
+          // res.send(JSON.stringify({
+          //   'transSubmitted': "success",
+          //   // 'transHash': result.hash,
+          //   // 'etherscan': "https://mumbai.polygonscan.com/tx/" + result.hash,
+          //   'log': receipt
+          // }));
+
+          // .then(
+          //   (result) => {
+          //     console.log('result is ', result);
+          //     res.send(JSON.stringify({
+          //       'transSubmitted': "success",
+          //       'transHash': result.hash,
+          //       'etherscan': "https://mumbai.polygonscan.com/tx/" + result.hash
+          //     }));
+          //     return result.wait;
+          //   },
+          //   (error) => {
+          //     console.log('error', error.error.message);
+          //     errorCaught = true;
+          //   }
+          // ).then(
+          //   (wait) => {
+          //     console.log('wait is ', wait);
+          //   }
+          // )
+
+
+
           // .then(
           //   () => {
           //     synchBalance(dbRes.rows[0].address);
           //     synchBalance(dbRes.rows[1].address);
-              // .then(
-              //   () => {
-              //     let queryTextPostTransfer = "SELECT * FROM userwallet5 WHERE username = " + "\'" + dbRes.rows[1].username + "\'" + ";";
-              //     console.log("after synch: query text post transfer is ", queryTextPostTransfer);
-              //     //search db for where username exist
-              //     pool.connect((err, client, done) => {
-              //       if (err) throw err
-              //       client.query(queryTextPostTransfer, (err, dbRes) => {
-              //         done()
-              //         if (err) {
-              //           console.log(err.stack)
-              //         } else {
-              //           if (dbRes.rowCount > 0) {
-              //             console.log("after synch: user in db");
-              //             console.log('after synch: dbRes.rows[0]', dbRes.rows[0]);
-              //             res.send(JSON.stringify({
-              //               'after synch': 'yes',
-              //               'username': dbRes.rows[0].username,
-              //               'address': dbRes.rows[0].address,
-              //               'balance': dbRes.rows[0].balance
-              //             }));
-              //           }
-              //         }
-              //       })
-              //     })
-              //   }
-              // );
+          // .then(
+          //   () => {
+          //     let queryTextPostTransfer = "SELECT * FROM userwallet5 WHERE username = " + "\'" + dbRes.rows[1].username + "\'" + ";";
+          //     console.log("after synch: query text post transfer is ", queryTextPostTransfer);
+          //     //search db for where username exist
+          //     pool.connect((err, client, done) => {
+          //       if (err) throw err
+          //       client.query(queryTextPostTransfer, (err, dbRes) => {
+          //         done()
+          //         if (err) {
+          //           console.log(err.stack)
+          //         } else {
+          //           if (dbRes.rowCount > 0) {
+          //             console.log("after synch: user in db");
+          //             console.log('after synch: dbRes.rows[0]', dbRes.rows[0]);
+          //             res.send(JSON.stringify({
+          //               'after synch': 'yes',
+          //               'username': dbRes.rows[0].username,
+          //               'address': dbRes.rows[0].address,
+          //               'balance': dbRes.rows[0].balance
+          //             }));
+          //           }
+          //         }
+          //       })
+          //     })
+          //   }
+          // );
 
 
 
