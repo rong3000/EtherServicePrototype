@@ -160,57 +160,61 @@ app.post('/api/transer/', function (req, res, next) {
           contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount).then(
             (result) => {
               console.log('result is ', result);
-              // return result.wait;
+              res.send(JSON.stringify({
+                'transSubmitted': "success",
+                'transHash': result.hash,
+                'etherscan': "https://mumbai.polygonscan.com/tx/" + result.hash
+              }));
             },
             (error) => {
               console.log('error', error.error.message);
               errorCaught = true;
             }
-          ).then(
-            () => {
-              synchBalance(dbRes.rows[0].address);
-              synchBalance(dbRes.rows[1].address).then(
-                () => {
-                  let queryTextPostTransfer = "SELECT * FROM userwallet5 WHERE username = " + "\'" + dbRes.rows[1].username + "\'" + ";";
-                  console.log("after synch: query text post transfer is ", queryTextPostTransfer);
-                  //search db for where username exist
-                  pool.connect((err, client, done) => {
-                    if (err) throw err
-                    client.query(queryTextPostTransfer, (err, dbRes) => {
-                      done()
-                      if (err) {
-                        console.log(err.stack)
-                      } else {
-                        if (dbRes.rowCount > 0) {
-                          console.log("after synch: user in db");
-                          console.log('after synch: dbRes.rows[0]', dbRes.rows[0]);
-                          res.send(JSON.stringify({
-                            'after synch': 'yes',
-                            'username': dbRes.rows[0].username,
-                            'address': dbRes.rows[0].address,
-                            'balance': dbRes.rows[0].balance
-                          }));
-                        }
-                      }
-                    })
-                  })
-                }
-              );
+          )
+          // .then(
+          //   () => {
+          //     synchBalance(dbRes.rows[0].address);
+          //     synchBalance(dbRes.rows[1].address);
+              // .then(
+              //   () => {
+              //     let queryTextPostTransfer = "SELECT * FROM userwallet5 WHERE username = " + "\'" + dbRes.rows[1].username + "\'" + ";";
+              //     console.log("after synch: query text post transfer is ", queryTextPostTransfer);
+              //     //search db for where username exist
+              //     pool.connect((err, client, done) => {
+              //       if (err) throw err
+              //       client.query(queryTextPostTransfer, (err, dbRes) => {
+              //         done()
+              //         if (err) {
+              //           console.log(err.stack)
+              //         } else {
+              //           if (dbRes.rowCount > 0) {
+              //             console.log("after synch: user in db");
+              //             console.log('after synch: dbRes.rows[0]', dbRes.rows[0]);
+              //             res.send(JSON.stringify({
+              //               'after synch': 'yes',
+              //               'username': dbRes.rows[0].username,
+              //               'address': dbRes.rows[0].address,
+              //               'balance': dbRes.rows[0].balance
+              //             }));
+              //           }
+              //         }
+              //       })
+              //     })
+              //   }
+              // );
 
 
 
-            }
-          );
+          //   }
+          // );
         }
         else {
-          console.log('sender or receiver not in db')
+          console.log('sender or receiver not in db');
+          res.send('sender or receiver not in db');
         }
       }
     })
   })
-
-
-
 })
 
 app.listen(app.get('port'), function () {
