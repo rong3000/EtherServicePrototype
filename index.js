@@ -18,8 +18,6 @@ const url = "https://polygon-mumbai.g.alchemy.com/v2/8_ArLwNTuvxrIAhPvAq9xBxRel3
 const provider = new ethers.providers.JsonRpcProvider(url);//chain specific
 
 contract = new ethers.Contract(CONTRACT_ID, Contract.abi, provider);//read only; chain specific
-// contractWithSigner = contract.connect(signer);//writable; chain specific
-// contractWithSigner.transfer('addres', '0x100');
 
 const app = express()
   .set('port', PORT)
@@ -61,6 +59,7 @@ async function synchBalance(address) {
           }
         })
       })
+
     }
   );
 }
@@ -69,18 +68,74 @@ async function contractTransfer(signer, res, req, dbRes) {
   let contractWithSigner = new ethers.Contract(CONTRACT_ID, Contract.abi, signer);//writable; chain specific
   const tx = await contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount);
   console.log('tx hash is ', tx.hash);
+  let availableBalance = (bigNumber.from(dbRes.rows[0].availbalance).sub(bigNumber.from(req.body.amount)))._hex;
   res.send(JSON.stringify({
     'transSubmitted': "success",
     'transHash': tx.hash,
-    'etherscan': "https://mumbai.polygonscan.com/tx/" + tx.hash
+    'etherscan': "https://mumbai.polygonscan.com/tx/" + tx.hash,
+    'sender_availBalance': availableBalance //initial availableBalance is the same as actual balance
   }));
+
+  //write tx information into table TRANS_TEST
+  pool.connect((err, client, done) => {
+    if (err) {
+      console.log('err is ', err);
+    }
+
+    client.query("INSERT INTO TRANS_TEST (TRANS_HASH, TRANS_STATUS, TRANS_AMOUNT, USER_ID) VALUES ($1::varchar, $2::int, $3::varchar, $4::int);",
+      [tx.hash,
+        0,
+      req.body.amount,
+      dbRes.rows[0].id
+      ], (err, res) => {
+        done()
+        if (err) {
+          console.log(err.stack)
+        } else {
+          console.log('data inserted into trans db are ', tx.hash,
+            0,
+            req.body.amount,
+            dbRes.rows[0].id);
+          console.log('inserted into Trans db without error', res.command, ' ', res.rowCount);
+        }
+      })
+  })
+
+  //immediately deduct tran amount from chain balance and then set in db availabe balance
+  pool.connect((err, client, done) => {
+    if (err) throw err
+    client.query("UPDATE userwallet5 SET AVAILBALANCE = " + "\'" + availableBalance + "\'" + " WHERE ID = " + "\'" + dbRes.rows[0].id + "\'" + ";", (err, res) => {
+      done()
+      if (err) {
+        console.log(err.stack)
+      } else {
+        console.log('updated availbalance into userwallet5 db without error', res.command, ' ', res.rowCount);
+      }
+    })
+  })
+
   const receipt = await tx.wait();
   console.log('receipt is ', receipt);
+
+  //write tx confirmation into table TRANS_TEST
+  let queryText = "UPDATE TRANS_TEST SET TRANS_STATUS = " + "\'" + '1' + "\'" + " WHERE TRANS_HASH = " + "\'" + tx.hash + "\'" + ";";
+  pool.connect((err, client, done) => {
+    if (err) throw err
+    client.query(queryText, (err, res) => {
+      done()
+      if (err) {
+        console.log(err.stack)
+      } else {
+        console.log('updated trans_status without error', res.command, ' ', res.rowCount);
+      }
+    })
+  })
+
   const synchSender = await synchBalance(dbRes.rows[0].address);
   console.log('synchSender result is ', synchSender);
   const synchReceiver = await synchBalance(dbRes.rows[1].address);
   console.log('synchReceiver result is ', synchReceiver);
-  
+
 }
 
 
@@ -126,6 +181,7 @@ app.get('/api/user/:username', function (req, res) {
           console.log('username is ', user);
           console.log('address is ', randomWallet.address);
           console.log('private key is ', randomWallet.privateKey);
+
           pool.connect((err, client, done) => {
             if (err) throw err
 
@@ -137,7 +193,7 @@ app.get('/api/user/:username', function (req, res) {
               ], (err, res) => {
                 done()
                 if (err) {
-                  console.log(err.stack)
+                  console.log(err.stack);
                 } else {
                   console.log('inserted without error', res.command, ' ', res.rowCount);
                 }
@@ -169,85 +225,20 @@ app.post('/api/transer/', function (req, res, next) {
         console.log(err.stack)
       } else {
         if (dbRes.rowCount == 2) {
-          // console.log("sender in db, private key is", dbRes.rows[0].private);
-          console.log("sender in db, private key is", dbRes.rows[0].private);
           console.log("sender in db, public address is", dbRes.rows[0].address);
+
           console.log("receiver in db, public address is", dbRes.rows[1].address);
-          console.log("req.body.amount", req.body.amount);
+          if (dbRes.rows[0].availbalance < req.body.amount) {
 
-          let signer = new ethers.Wallet(dbRes.rows[0].private, provider);//chain specific
-          // let contractWithSigner = contract.connect(signer, provider);//writable; chain specific
-          // let contractWithSigner = new ethers.Contract(CONTRACT_ID, Contract.abi, signer);//writable; chain specific
+            console.log("sender available balance is ", dbRes.rows[0].availbalance);
+            console.log("sending amount is ", req.body.amount);
 
-          contractTransfer(signer, res, req, dbRes);
-          // const tx = contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount);
-          // const receipt = tx.wait;
-          // console.log(receipt);
-          // res.send(JSON.stringify({
-          //   'transSubmitted': "success",
-          //   // 'transHash': result.hash,
-          //   // 'etherscan': "https://mumbai.polygonscan.com/tx/" + result.hash,
-          //   'log': receipt
-          // }));
+            res.send("Insuficient available balance.");
 
-          // .then(
-          //   (result) => {
-          //     console.log('result is ', result);
-          //     res.send(JSON.stringify({
-          //       'transSubmitted': "success",
-          //       'transHash': result.hash,
-          //       'etherscan': "https://mumbai.polygonscan.com/tx/" + result.hash
-          //     }));
-          //     return result.wait;
-          //   },
-          //   (error) => {
-          //     console.log('error', error.error.message);
-          //     errorCaught = true;
-          //   }
-          // ).then(
-          //   (wait) => {
-          //     console.log('wait is ', wait);
-          //   }
-          // )
-
-
-
-          // .then(
-          //   () => {
-          //     synchBalance(dbRes.rows[0].address);
-          //     synchBalance(dbRes.rows[1].address);
-          // .then(
-          //   () => {
-          //     let queryTextPostTransfer = "SELECT * FROM userwallet5 WHERE username = " + "\'" + dbRes.rows[1].username + "\'" + ";";
-          //     console.log("after synch: query text post transfer is ", queryTextPostTransfer);
-          //     //search db for where username exist
-          //     pool.connect((err, client, done) => {
-          //       if (err) throw err
-          //       client.query(queryTextPostTransfer, (err, dbRes) => {
-          //         done()
-          //         if (err) {
-          //           console.log(err.stack)
-          //         } else {
-          //           if (dbRes.rowCount > 0) {
-          //             console.log("after synch: user in db");
-          //             console.log('after synch: dbRes.rows[0]', dbRes.rows[0]);
-          //             res.send(JSON.stringify({
-          //               'after synch': 'yes',
-          //               'username': dbRes.rows[0].username,
-          //               'address': dbRes.rows[0].address,
-          //               'balance': dbRes.rows[0].balance
-          //             }));
-          //           }
-          //         }
-          //       })
-          //     })
-          //   }
-          // );
-
-
-
-          //   }
-          // );
+          } else {
+            let signer = new ethers.Wallet(dbRes.rows[0].private, provider);
+            contractTransfer(signer, res, req, dbRes);
+          }
         }
         else {
           console.log('sender or receiver not in db');
