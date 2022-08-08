@@ -281,7 +281,7 @@ app.get('/api/synchbalance/:username', function (req, res) {
   })
 })
 
-app.post('/api/transer/', function (req, res, next) {
+app.post('/api/transfer/', function (req, res, next) {
 
   let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + req.body.transferFrom + "\'" + "\n"
     + "UNION ALL" + "\n"
