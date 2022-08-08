@@ -64,6 +64,35 @@ async function synchBalance(address) {
   );
 }
 
+async function synchBalanceReturning(address, res) {
+  contract.balanceOf(address).then( //check with chain what's user balance //chain specific
+    (result) => {
+      console.log('in synchBalanceReturning: show me the result of balance check', result._hex);
+      let queryText = "UPDATE userwallet5 SET BALANCE = " + "\'" + result._hex + "\'" + " WHERE ADDRESS = " + "\'" + address + "\'" + " returning * ;";
+      console.log("in synchBalanceReturning: query text is ", queryText);
+
+      pool.connect((err, client, done) => {
+        if (err) throw err
+        client.query(queryText, (err, dbRes) => {
+          done()
+          if (err) {
+            console.log(err.stack)
+          } else {
+            console.log('in synchBalanceReturning: Balance synch to db without error', dbRes.command, ' ', dbRes.rowCount);
+            res.send(JSON.stringify({
+              'username': dbRes.rows[0].username,
+              'address': dbRes.rows[0].address,
+              'balance': dbRes.rows[0].balance,
+              'available balance': dbRes.rows[0].availbalance
+            }));
+          }
+        })
+      })
+
+    }
+  );
+}
+
 async function contractTransfer(signer, res, req, dbRes) {
   let contractWithSigner = new ethers.Contract(CONTRACT_ID, Contract.abi, signer);//writable; chain specific
   const tx = await contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount);
@@ -156,7 +185,7 @@ app.get('/api/user/:username', function (req, res) {
 
   let user = req.params.username.toString();
 
-  let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + user + "\'" + ";";
+  let queryText = "SELECT * FROM userwallet5 left join trans_test on (userwallet5.id = trans_test.user_id) WHERE username = " + "\'" + user + "\'" + ";";
   console.log("query text is ", queryText);
   //search db for where username exist
   pool.connect((err, client, done) => {
@@ -168,11 +197,31 @@ app.get('/api/user/:username', function (req, res) {
       } else {
         if (dbRes.rowCount > 0) {
           console.log("user in db");
-          console.log('dbRes.rows[0]', dbRes.rows[0]);
+          console.log('dbRes.rows', dbRes.rows);
+
+          let b = [];
+          let rows = dbRes.rows;
+
+          for (row in rows) {
+            console.log('row', row);
+
+            let a =
+            {
+              'trans_hash': rows[row].trans_hash,
+              'trans_status': rows[row].trans_status,
+              'trans_amount': rows[row].trans_amount
+            }
+            b.push(a);
+            console.log('a', a);
+            console.log('b', b);
+          }
+
           res.send(JSON.stringify({
             'username': dbRes.rows[0].username,
             'address': dbRes.rows[0].address,
-            'balance': dbRes.rows[0].balance
+            'balance': dbRes.rows[0].balance,
+            'available balance': dbRes.rows[0].availbalance,
+            'trans': b
           }));
         }
         else {
@@ -185,10 +234,11 @@ app.get('/api/user/:username', function (req, res) {
           pool.connect((err, client, done) => {
             if (err) throw err
 
-            client.query("INSERT INTO userwallet5 (username, address, private, balance) VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar);",
+            client.query("INSERT INTO userwallet5 (username, address, private, balance, availbalance) VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::varchar);",
               [user,
                 randomWallet.address,
                 randomWallet.privateKey,
+                '0x0',
                 '0x0'
               ], (err, res) => {
                 done()
@@ -203,9 +253,29 @@ app.get('/api/user/:username', function (req, res) {
           res.send(JSON.stringify({
             'username': user,
             'address': randomWallet.address,
-            'balance': '0x0'
+            'balance': '0x0',
+            'availbalance': '0x0'
           }));
         }
+      }
+    })
+  })
+})
+app.get('/api/synchbalance/:username', function (req, res) {
+
+  let user = req.params.username.toString();
+
+  let queryText = "SELECT * FROM userwallet5 left join trans_test on (userwallet5.id = trans_test.user_id) WHERE username = " + "\'" + user + "\'" + ";";
+  console.log("query text is ", queryText);
+  //search db for where username exist
+  pool.connect((err, client, done) => {
+    if (err) throw err
+    client.query(queryText, (err, dbRes) => {
+      done()
+      if (err) {
+        console.log(err.stack)
+      } else {
+        synchBalanceReturning(dbRes.rows[0].address, res);
       }
     })
   })
