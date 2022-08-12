@@ -8,20 +8,16 @@ const PORT = process.env.PORT || 3000
 const ethers = require("ethers");//chain specific
 var bigNumber = ethers.BigNumber;//chain specific
 
-const CONTRACT_ID = "0x74Dc9e5beeF3D9ee614E6016aBA19c058B4D0c20"; //chain specific
+const CONTRACT_ID = "0xF3BF07dc4A736f55C8F46711F66dD087d998b3Cf"; //chain specific
 //to be changed after every contract deployed
-const PC_CONTRACT_ID = "0xB9D84AbEC4f11F6779C3cbCA2Ab65530D18E5Ef6";//PC_ alias Private Chain
 
 const Contract = require('./MyToken.json');//chain specific
 
-const url = "https://polygon-mumbai.g.alchemy.com/v2/8_ArLwNTuvxrIAhPvAq9xBxRel3zc1pj";//chain specific
-const PC_URL = "http://127.0.0.1:8545/";
+const url = "http://blockchain.my-neighbours.com:8545/";
 
 const provider = new ethers.providers.JsonRpcProvider(url);//chain specific
-const PC_provider = new ethers.providers.JsonRpcProvider(PC_URL);
 
 let contract = new ethers.Contract(CONTRACT_ID, Contract.abi, provider);//read only; chain specific
-let PC_contract = new ethers.Contract(CONTRACT_ID, Contract.abi, PC_provider);
 
 const app = express()
   .set('port', PORT)
@@ -99,7 +95,6 @@ async function synchBalanceReturning(address, res) {
 
 async function contractTransfer(signer, res, req, dbRes) {
   let contractWithSigner = new ethers.Contract(CONTRACT_ID, Contract.abi, signer);
-  // let contractWithSigner = new ethers.Contract(PC_CONTRACT_ID, Contract.abi, signer);//writable; chain specific
   const tx = await contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount);
   console.log('tx hash is ', tx.hash);
   let availableBalance = (bigNumber.from(dbRes.rows[0].availbalance).sub(bigNumber.from(req.body.amount)))._hex;
@@ -221,13 +216,22 @@ app.get('/api/user/:username', function (req, res) {
             console.log('b', b);
           }
 
-          res.send(JSON.stringify({
-            'username': dbRes.rows[0].username,
-            'address': dbRes.rows[0].address,
-            'balance': dbRes.rows[0].balance,
-            'available balance': dbRes.rows[0].availbalance,
-            'trans': b
-          }));
+          contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance //chain specific
+            (result) => {
+              console.log('in LOAD userwallet: show me the result of balance check', result._hex);
+              res.send(JSON.stringify({
+                'username': dbRes.rows[0].username,
+                'address': dbRes.rows[0].address,
+                'balance': result._hex,
+                'available balance': dbRes.rows[0].availbalance,
+                'trans': b
+              }));
+
+              if (result._hex != dbRes.rows[0].balance) {
+                synchBalance(dbRes.rows[0].address);
+              }
+            }
+          );          
         }
         else {
           console.log("user not in db, creating new user entry in db...");
@@ -312,9 +316,7 @@ app.post('/api/transfer/', function (req, res, next) {
 
           } else {
             let signer = new ethers.Wallet(dbRes.rows[0].private, provider);
-            let PC_signer = new ethers.Wallet(dbRes.rows[0].private, PC_provider);
             contractTransfer(signer, res, req, dbRes);
-            // contractTransfer(PC_signer, res, req, dbRes);
           }
         }
         else {
