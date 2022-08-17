@@ -101,8 +101,8 @@ async function contractTransfer(signer, res, req, dbRes) {
     res.send(JSON.stringify({
       'transSubmitted': "success",
       'transHash': tx.hash,
-      'etherscan': "https://mumbai.polygonscan.com/tx/" + tx.hash,
-      'sender_availBalance': availableBalance //initial availableBalance is the same as actual balance
+      'etherscan': "https://mumbai.polygonscan.com/tx/" + tx.hash
+      // 'sender_availBalance': availableBalance //initial availableBalance is the same as actual balance
     }));
 
     //write tx information into table TRANS_TEST
