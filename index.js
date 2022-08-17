@@ -38,6 +38,60 @@ app.all('*', function (req, res, next) {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+function checkAvailableBalance(dbRes) {
+  let queryText = "SELECT * FROM trans_test WHERE USER_ID = " + "\'" + dbRes.rows[0].id + "\'" + ";";
+  console.log("query text is ", queryText);
+
+  pool.connect((err, client, done) => {
+    if (err) throw err
+    client.query(queryText, (err, dbResInFunc) => {
+      done()
+      if (err) {
+        console.log(err.stack)
+      } else {
+
+        let pendingAmount = bigNumber.from('0x0');
+        for (row in dbResInFunc.rows) {
+          if (dbResInFunc.rows[row].trans_hash ?? false) {//null ?? false   => false
+            //'0x00000000" ?? false => "0x00000"
+            if (dbResInFunc.rows[row].trans_status != 0 || dbResInFunc.rows[row].trans_status != 1) {
+              provider.getTransactionReceipt(dbResInFunc.rows[row].trans_hash).then(
+                (result) => {
+                  if (result == null) {
+                    pendingAmount = pendingAmount.add(bigNumber.from(dbResInFunc.rows[row].trans_amount))
+                  }
+                }
+              )
+            }
+          }
+        }
+      }
+    })
+  })
+
+  contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance //chain specific
+    (result) => {
+      console.log('in LOAD userwallet: show me the result of balance check', result._hex);
+      let ab = result.sub(pendingAmount);
+      return ab;
+      // res.send(JSON.stringify({
+      //   'username': dbRes.rows[0].username,
+      //   'address': dbRes.rows[0].address,
+      //   'balance': result._hex,
+      //   'available balance': ab._hex,
+      //   'trans': b
+      // }));
+
+      // if (result._hex != dbRes.rows[0].balance) {
+      //   synchBalance(dbRes.rows[0].address);
+      // }
+    },
+    (error) => {
+      console.log('error infor is ', error)
+    }
+  );
+}
+
 async function synchBalance(address) {
   contract.balanceOf(address).then( //check with chain what's user balance //chain specific
     (result) => {
@@ -202,6 +256,8 @@ app.get('/api/user/:username', function (req, res) {
           let b = [];
           let rows = dbRes.rows;
 
+          let pendingAmount = bigNumber.from('0x0');
+
           for (row in rows) {
             console.log('row', row);
 
@@ -214,24 +270,51 @@ app.get('/api/user/:username', function (req, res) {
             b.push(a);
             console.log('a', a);
             console.log('b', b);
+            if (rows[row].trans_hash ?? false) {//null ?? false   => false
+              //'0x00000000" ?? false => "0x00000"
+              if (rows[row].trans_status ?? true) {//null ?? true   => true
+                // 0 or 1 ?? true => 0 or 1
+                provider.getTransactionReceipt(rows[row].trans_hash).then(
+                  (result) => {
+                    if (result == null) {
+                      pendingAmount = pendingAmount.add(bigNumber.from(rows[row].trans_amount))
+
+                    }
+                  }
+                )
+
+              }
+
+            }
+
           }
 
           contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance //chain specific
             (result) => {
               console.log('in LOAD userwallet: show me the result of balance check', result._hex);
+              let ab = result.sub(pendingAmount);
               res.send(JSON.stringify({
                 'username': dbRes.rows[0].username,
                 'address': dbRes.rows[0].address,
                 'balance': result._hex,
-                'available balance': dbRes.rows[0].availbalance,
+                'available balance': ab._hex,
                 'trans': b
               }));
 
               if (result._hex != dbRes.rows[0].balance) {
                 synchBalance(dbRes.rows[0].address);
               }
+            },
+            (error) => {
+              res.send(
+                JSON.stringify({
+                  'error': error,
+                  'hint': "balance check fail, please check again"
+                })
+              )
             }
-          );          
+          );
+
         }
         else {
           console.log("user not in db, creating new user entry in db...");
@@ -307,9 +390,10 @@ app.post('/api/transfer/', function (req, res, next) {
           console.log("sender in db, public address is", dbRes.rows[0].address);
 
           console.log("receiver in db, public address is", dbRes.rows[1].address);
-          if (dbRes.rows[0].availbalance < req.body.amount) {
+          let ab = checkAvailableBalance(dbRes);
+          if (ab.lt(bigNumber.from(req.body.amount)) ) {
 
-            console.log("sender available balance is ", dbRes.rows[0].availbalance);
+            console.log("sender available balance is ", ab);
             console.log("sending amount is ", req.body.amount);
 
             res.send("Insuficient available balance.");
