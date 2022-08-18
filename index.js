@@ -65,12 +65,12 @@ async function synchBalance(address) {
 }
 
 async function checkAvail(dbRes, res) {
-
-  let b = [];
-
-  let pendingAmount = bigNumber.from('0x0');
-  let avail = bigNumber.from('0x0');
   try {
+    let b = [];
+
+    let pendingAmount = bigNumber.from('0x0');
+    let avail = bigNumber.from('0x0');
+
     const chainBal = await contract.balanceOf(dbRes.rows[0].address);
 
     for (row in dbRes.rows) {
@@ -85,38 +85,41 @@ async function checkAvail(dbRes, res) {
       console.log(dbRes.rows[row].trans_status);
       if (dbRes.rows[row].trans_hash != null) {
         if (dbRes.rows[row].trans_status != 0 || dbRes.rows[row].trans_status != 1) {
-          try {
-            let txReceipt = await provider.getTransactionReceipt(dbRes.rows[row].trans_hash);
-            console.log('2 and txReceipt is ', txReceipt);
-            if (txReceipt == null) {
-              pendingAmount = pendingAmount.add(bigNumber.from(dbRes.rows[row].trans_amount))
-              console.log('pendingAmount is ', pendingAmount);
-              console.log('actual bal is ', chainBal);
-              avail = chainBal.sub(pendingAmount);
-              console.log('avail bal is ', avail);
-              console.log('3');
-              console.log('avail is ', avail);
 
-              res.send(JSON.stringify({
-                'username': dbRes.rows[0].username,
-                'address': dbRes.rows[0].address,
-                'balance': chainBal._hex,
-                'available balance': avail._hex,
-                'trans': b
-              }));
-            }
-          } catch (error) {
-            console.log(error);
-            res.send(JSON.stringify({
-              'transSubmitted': "fail",
-              'error reason': error.reason,
-              'error code': error.code
-            }));
+          let txReceipt = await provider.getTransactionReceipt(dbRes.rows[row].trans_hash);
+          console.log('2 and txReceipt is ', txReceipt);
+          if (txReceipt == null) {
+            pendingAmount = pendingAmount.add(bigNumber.from(dbRes.rows[row].trans_amount))
+            console.log('pendingAmount is ', pendingAmount);
+            console.log('actual bal is ', chainBal);
+            avail = chainBal.sub(pendingAmount);
+            console.log('avail bal is ', avail);
+            console.log('3');
+            console.log('avail is ', avail);
+
+
           }
+
+          console.log(error);
+          res.send(JSON.stringify({
+            'transSubmitted': "fail",
+            'error reason': error.reason,
+            'error code': error.code
+          }));
+
 
         }
       }
     }
+
+    res.send(JSON.stringify({
+      'username': dbRes.rows[0].username,
+      'address': dbRes.rows[0].address,
+      'balance': chainBal._hex,
+      'available balance': avail._hex,
+      'trans': b
+    }));
+
   } catch (error) {
     console.log(error);
     res.send(JSON.stringify({
@@ -132,26 +135,64 @@ async function checkAvail(dbRes, res) {
 }
 
 
-async function checkChainBal(address) {
+// async function checkChainBal(address) {
+//   try {
+//     const chainBal = await contract.balanceOf(address);
+//     return chainBal;
+
+//   } catch (error) {
+//     console.log(error);
+//     return error;
+//   }
+// }
+
+async function checkBeforeTransfer(dbResInFunc, res, req) {
   try {
-    const chainBal = await contract.balanceOf(address);
-    return chainBal;
+    let pendingAmount = bigNumber.from('0x0');;
+    for (row in dbResInFunc.rows) {
+      console.log('dbResInFunc.rows[row].trans_hash', dbResInFunc.rows[row].trans_hash);
+      if (dbResInFunc.rows[row].trans_hash != null) {
+        console.log('dbResInFunc.rows[row].trans_status', dbResInFunc.rows[row].trans_status);
+        if (dbResInFunc.rows[row].trans_status != 0 || dbResInFunc.rows[row].trans_status != 1) {
+          let result = await provider.getTransactionReceipt(dbResInFunc.rows[row].trans_hash);
+          console.log('result is ', result);
+          if (result == null) {
+            pendingAmount = pendingAmount.add(bigNumber.from(dbResInFunc.rows[row].trans_amount))
+            console.log("pending", pendingAmount);
+          }
+        }
+      }
+    }
+    console.log('?');
+
+    let ab;
+    console.log('dbResInFunc.rows[0]', dbResInFunc.rows[0]);
+    let ccbResult = await contract.balanceOf(dbResInFunc.rows[0].address);
+
+    console.log('in LOAD userwallet: show me the result of balance check', ccbResult._hex);
+    ab = ccbResult.sub(pendingAmount);
+    console.log('ab is ', ab);
+    if (ab.lt(bigNumber.from(req.body.amount))) {
+
+      console.log("sending amount is ", req.body.amount);
+
+      res.send(JSON.stringify({
+        'available balance': ab,
+        'trans submitted': "fail",
+        'if fail reason': "Insuficient available balance"
+      }));
+    } else {
+      let signer = new ethers.Wallet(dbResInFunc.rows[0].private, provider);
+      contractTransfer(signer, res, req, dbResInFunc);
+    }
+
 
   } catch (error) {
-    console.log(error);
-    return error;
-  }
-}
 
-async function checkChainReceipt(trans_hash) {
-  try {
-    const chainReceipt = await provider.getTransactionReceipt(trans_hash);
-    return chainReceipt;
-
-  } catch (error) {
-    console.log(error);
-    return error;
   }
+
+
+
 }
 
 async function synchBalanceReturning(address, res) {
@@ -212,25 +253,12 @@ async function contractTransfer(signer, res, req, dbRes) {
             console.log(err.stack)
           } else {
             console.log('data inserted into trans db are ', tx.hash,
-              0,
+              2,
               req.body.amount,
               dbRes.rows[0].id);
             console.log('inserted into Trans db without error', res.command, ' ', res.rowCount);
           }
         })
-    })
-
-    //immediately deduct tran amount from chain balance and then set in db availabe balance
-    pool.connect((err, client, done) => {
-      if (err) throw err
-      client.query("UPDATE userwallet5 SET AVAILBALANCE = " + "\'" + availableBalance + "\'" + " WHERE ID = " + "\'" + dbRes.rows[0].id + "\'" + ";", (err, res) => {
-        done()
-        if (err) {
-          console.log(err.stack)
-        } else {
-          console.log('updated availbalance into userwallet5 db without error', res.command, ' ', res.rowCount);
-        }
-      })
     })
 
     const receipt = await tx.wait();
@@ -249,11 +277,6 @@ async function contractTransfer(signer, res, req, dbRes) {
         }
       })
     })
-
-    const synchSender = await synchBalance(dbRes.rows[0].address);
-    console.log('synchSender result is ', synchSender);
-    const synchReceiver = await synchBalance(dbRes.rows[1].address);
-    console.log('synchReceiver result is ', synchReceiver);
   } catch (error) {
     console.log(error);
     res.send(JSON.stringify({
@@ -356,10 +379,12 @@ app.post('/api/transfer/', function (req, res, next) {
 
           console.log("receiver in db, public address is", dbRes.rows[1].address);
 
-          let queryText = "SELECT * FROM trans_test WHERE USER_ID = " + "\'" + dbRes.rows[0].id + "\'" + ";";
+          let queryText = "SELECT * FROM trans_test left join userwallet5 on (trans_test.user_id = userwallet5.id) WHERE USER_ID = " + "\'" + dbRes.rows[0].id + "\'" + ";";
+
+          // let queryText = "SELECT * FROM userwallet5 left join trans_test on (userwallet5.id = trans_test.user_id) WHERE username = " + "\'" + user + "\'" + ";";
           console.log("query text for trans is ", queryText);
 
-          let pendingAmount = bigNumber.from('0x0');;
+
 
           pool.connect((err, client, done) => {
             if (err) throw err
@@ -370,19 +395,10 @@ app.post('/api/transfer/', function (req, res, next) {
               } else {
 
                 if (dbResInFunc.rowCount > 0) {
+
                   console.log('trans exist');
-                  console.log("pendingAmount", pendingAmount);
-                  for (row in dbResInFunc.rows) {
-                    if (dbResInFunc.rows[row].trans_hash != null) {//null ?? false   => false
-                      //'0x00000000" ?? false => "0x00000"
-                      if (dbResInFunc.rows[row].trans_status != 0 || dbResInFunc.rows[row].trans_status != 1) {
-                        let result = checkChainReceipt(dbResInFunc.rows[row].trans_hash);
-                        if (result == null) {
-                          pendingAmount = pendingAmount.add(bigNumber.from(dbResInFunc.rows[row].trans_amount))
-                        }
-                      }
-                    }
-                  }
+                  checkBeforeTransfer(dbResInFunc, res, req)
+
                 }
                 else {
                   console.log('no any trans exists');
@@ -392,25 +408,7 @@ app.post('/api/transfer/', function (req, res, next) {
             })
           })
 
-          let ab;
-          let ccbResult = checkChainBal(dbRes.rows[0].address);
 
-          console.log('in LOAD userwallet: show me the result of balance check', ccbResult._hex);
-              ab = ccbResult.sub(pendingAmount);
-              console.log('ab is ', ab);
-              if (ab.lt(bigNumber.from(req.body.amount))) {
-
-                console.log("sending amount is ", req.body.amount);
-
-                res.send(JSON.stringify({
-                  'available balance': ab,
-                  'trans submitted': "fail",
-                  'if fail reason': "Insuficient available balance"
-                }));
-              } else {
-                let signer = new ethers.Wallet(dbRes.rows[0].private, provider);
-                contractTransfer(signer, res, req, dbRes);
-              }
 
 
 
