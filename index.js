@@ -139,8 +139,6 @@ async function checkBeforeTransfer(dbResInFunc, res, req, receiver) {
       let signer = new ethers.Wallet(dbResInFunc.rows[0].private, provider);
       contractTransfer(signer, res, req, dbResInFunc, receiver);
     }
-
-
   } catch (error) {
     console.log(error);
     res.send(JSON.stringify({
@@ -148,11 +146,7 @@ async function checkBeforeTransfer(dbResInFunc, res, req, receiver) {
       'error reason': error.reason,
       'error code': error.code
     }));
-
   }
-
-
-
 }
 
 async function contractTransfer(signer, res, req, dbRes, receiver) {
@@ -163,8 +157,6 @@ async function contractTransfer(signer, res, req, dbRes, receiver) {
     res.send(JSON.stringify({
       'transSubmitted': "success",
       'transHash': tx.hash,
-      'etherscan': "https://mumbai.polygonscan.com/tx/" + tx.hash
-      // 'sender_availBalance': availableBalance //initial availableBalance is the same as actual balance
     }));
 
     //write tx information into table TRANS_TEST
