@@ -1,5 +1,3 @@
-//express
-
 const express = require('express')
 const path = require('path')
 
@@ -38,32 +36,6 @@ app.all('*', function (req, res, next) {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-async function synchBalance(address) {
-  contract.balanceOf(address).then( //check with chain what's user balance //chain specific
-    (result) => {
-      console.log('in synchBalance: show me the result of balance check', result._hex);
-      let queryText = "UPDATE userwallet5 SET BALANCE = " + "\'" + result._hex + "\'" + " WHERE ADDRESS = " + "\'" + address + "\'" + ";";
-      console.log("in synchBalance: query text is ", queryText);
-
-      pool.connect((err, client, done) => {
-        if (err) throw err
-        client.query(queryText, (err, res) => {
-          done()
-          if (err) {
-            console.log(err.stack)
-          } else {
-            console.log('in synchBalance: Balance synch to db without error', res.command, ' ', res.rowCount);
-            return JSON.stringify({
-              'success': true
-            })
-          }
-        })
-      })
-
-    }
-  );
-}
-
 async function checkAvail(dbRes, res) {
   try {
     let b = [];
@@ -72,6 +44,7 @@ async function checkAvail(dbRes, res) {
     let avail = bigNumber.from('0x0');
 
     const chainBal = await contract.balanceOf(dbRes.rows[0].address);
+    console.log('chainBal is ', chainBal);
 
     for (row in dbRes.rows) {
       let a =
@@ -92,25 +65,14 @@ async function checkAvail(dbRes, res) {
             pendingAmount = pendingAmount.add(bigNumber.from(dbRes.rows[row].trans_amount))
             console.log('pendingAmount is ', pendingAmount);
             console.log('actual bal is ', chainBal);
-            avail = chainBal.sub(pendingAmount);
-            console.log('avail bal is ', avail);
-            console.log('3');
-            console.log('avail is ', avail);
-
-
           }
-
-          console.log(error);
-          res.send(JSON.stringify({
-            'transSubmitted': "fail",
-            'error reason': error.reason,
-            'error code': error.code
-          }));
-
-
         }
       }
     }
+
+    avail = chainBal.sub(pendingAmount);
+            console.log('3');
+            console.log('avail is ', avail);
 
     res.send(JSON.stringify({
       'username': dbRes.rows[0].username,
@@ -135,59 +97,57 @@ async function checkAvail(dbRes, res) {
 }
 
 
-// async function checkChainBal(address) {
-//   try {
-//     const chainBal = await contract.balanceOf(address);
-//     return chainBal;
-
-//   } catch (error) {
-//     console.log(error);
-//     return error;
-//   }
-// }
-
-async function checkBeforeTransfer(dbResInFunc, res, req) {
+async function checkBeforeTransfer(dbResInFunc, res, req, receiver) {
   try {
     let pendingAmount = bigNumber.from('0x0');;
+    let avail = bigNumber.from('0x0');
+
+    let chainBal = await contract.balanceOf(dbResInFunc.rows[0].address);
+    console.log('chainBal is ', chainBal);
+
     for (row in dbResInFunc.rows) {
       console.log('dbResInFunc.rows[row].trans_hash', dbResInFunc.rows[row].trans_hash);
       if (dbResInFunc.rows[row].trans_hash != null) {
         console.log('dbResInFunc.rows[row].trans_status', dbResInFunc.rows[row].trans_status);
         if (dbResInFunc.rows[row].trans_status != 0 || dbResInFunc.rows[row].trans_status != 1) {
-          let result = await provider.getTransactionReceipt(dbResInFunc.rows[row].trans_hash);
-          console.log('result is ', result);
-          if (result == null) {
+          let txReceipt = await provider.getTransactionReceipt(dbResInFunc.rows[row].trans_hash);
+          console.log('txReceipt is ', txReceipt);
+          if (txReceipt == null) {
             pendingAmount = pendingAmount.add(bigNumber.from(dbResInFunc.rows[row].trans_amount))
             console.log("pending", pendingAmount);
           }
         }
       }
     }
-    console.log('?');
 
-    let ab;
+    
     console.log('dbResInFunc.rows[0]', dbResInFunc.rows[0]);
-    let ccbResult = await contract.balanceOf(dbResInFunc.rows[0].address);
+    
+    avail = chainBal.sub(pendingAmount);
+    console.log('avail is ', avail);
 
-    console.log('in LOAD userwallet: show me the result of balance check', ccbResult._hex);
-    ab = ccbResult.sub(pendingAmount);
-    console.log('ab is ', ab);
-    if (ab.lt(bigNumber.from(req.body.amount))) {
-
-      console.log("sending amount is ", req.body.amount);
+    if (avail.lt(bigNumber.from(req.body.amount))) {
 
       res.send(JSON.stringify({
-        'available balance': ab,
+        'balance': chainBal._hex,
+        'available balance': avail._hex,
+        'attempted transfer amount': req.body.amount,
         'trans submitted': "fail",
         'if fail reason': "Insuficient available balance"
       }));
     } else {
       let signer = new ethers.Wallet(dbResInFunc.rows[0].private, provider);
-      contractTransfer(signer, res, req, dbResInFunc);
+      contractTransfer(signer, res, req, dbResInFunc, receiver);
     }
 
 
   } catch (error) {
+    console.log(error);
+    res.send(JSON.stringify({
+      'transSubmitted': "fail",
+      'error reason': error.reason,
+      'error code': error.code
+    }));
 
   }
 
@@ -195,39 +155,10 @@ async function checkBeforeTransfer(dbResInFunc, res, req) {
 
 }
 
-async function synchBalanceReturning(address, res) {
-  contract.balanceOf(address).then( //check with chain what's user balance //chain specific
-    (result) => {
-      console.log('in synchBalanceReturning: show me the result of balance check', result._hex);
-      let queryText = "UPDATE userwallet5 SET BALANCE = " + "\'" + result._hex + "\'" + " WHERE ADDRESS = " + "\'" + address + "\'" + " returning * ;";
-      console.log("in synchBalanceReturning: query text is ", queryText);
-
-      pool.connect((err, client, done) => {
-        if (err) throw err
-        client.query(queryText, (err, dbRes) => {
-          done()
-          if (err) {
-            console.log(err.stack)
-          } else {
-            console.log('in synchBalanceReturning: Balance synch to db without error', dbRes.command, ' ', dbRes.rowCount);
-            res.send(JSON.stringify({
-              'username': dbRes.rows[0].username,
-              'address': dbRes.rows[0].address,
-              'balance': dbRes.rows[0].balance,
-              'available balance': dbRes.rows[0].availbalance
-            }));
-          }
-        })
-      })
-
-    }
-  );
-}
-
-async function contractTransfer(signer, res, req, dbRes) {
+async function contractTransfer(signer, res, req, dbRes, receiver) {
   let contractWithSigner = new ethers.Contract(CONTRACT_ID, Contract.abi, signer);
   try {
-    const tx = await contractWithSigner.transfer(dbRes.rows[1].address, req.body.amount);
+    const tx = await contractWithSigner.transfer(receiver, req.body.amount);
     let availableBalance = (bigNumber.from(dbRes.rows[0].availbalance).sub(bigNumber.from(req.body.amount)))._hex;
     res.send(JSON.stringify({
       'transSubmitted': "success",
@@ -319,9 +250,6 @@ app.get('/api/user/:username', function (req, res) {
 
           checkAvail(dbRes, res);
 
-          // if (result._hex != dbRes.rows[0].balance) {
-          //   synchBalance(dbRes.rows[0].address);
-          // }
         }
         else {
           console.log("user not in db, creating new user entry in db...");
@@ -379,12 +307,8 @@ app.post('/api/transfer/', function (req, res, next) {
 
           console.log("receiver in db, public address is", dbRes.rows[1].address);
 
-          let queryText = "SELECT * FROM trans_test left join userwallet5 on (trans_test.user_id = userwallet5.id) WHERE USER_ID = " + "\'" + dbRes.rows[0].id + "\'" + ";";
-
-          // let queryText = "SELECT * FROM userwallet5 left join trans_test on (userwallet5.id = trans_test.user_id) WHERE username = " + "\'" + user + "\'" + ";";
-          console.log("query text for trans is ", queryText);
-
-
+          let queryText = "SELECT * FROM userwallet5 left join trans_test on (userwallet5.id = trans_test.user_id) WHERE username = " + "\'" + req.body.transferFrom + "\'" + ";";
+          console.log("query text for sender is ", queryText);
 
           pool.connect((err, client, done) => {
             if (err) throw err
@@ -396,12 +320,12 @@ app.post('/api/transfer/', function (req, res, next) {
 
                 if (dbResInFunc.rowCount > 0) {
 
-                  console.log('trans exist');
-                  checkBeforeTransfer(dbResInFunc, res, req)
+                  console.log('sender in db');
+                  checkBeforeTransfer(dbResInFunc, res, req, dbRes.rows[1].address)
 
                 }
                 else {
-                  console.log('no any trans exists');
+                  res.send('sender not in db');
                 }
 
               }
