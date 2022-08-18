@@ -131,6 +131,29 @@ async function checkAvail(dbRes, res) {
 
 }
 
+
+async function checkChainBal(address) {
+  try {
+    const chainBal = await contract.balanceOf(address);
+    return chainBal;
+
+  } catch (error) {
+    console.log(error);
+    return error;
+  }
+}
+
+async function checkChainReceipt(trans_hash) {
+  try {
+    const chainReceipt = await provider.getTransactionReceipt(trans_hash);
+    return chainReceipt;
+
+  } catch (error) {
+    console.log(error);
+    return error;
+  }
+}
+
 async function synchBalanceReturning(address, res) {
   contract.balanceOf(address).then( //check with chain what's user balance //chain specific
     (result) => {
@@ -270,8 +293,6 @@ app.get('/api/user/:username', function (req, res) {
       } else {
         if (dbRes.rowCount > 0) {
           console.log("user in db");
-          // console.log('dbRes.rows', dbRes.rows);
-
 
           checkAvail(dbRes, res);
 
@@ -355,13 +376,10 @@ app.post('/api/transfer/', function (req, res, next) {
                     if (dbResInFunc.rows[row].trans_hash != null) {//null ?? false   => false
                       //'0x00000000" ?? false => "0x00000"
                       if (dbResInFunc.rows[row].trans_status != 0 || dbResInFunc.rows[row].trans_status != 1) {
-                        provider.getTransactionReceipt(dbResInFunc.rows[row].trans_hash).then(
-                          (result) => {
-                            if (result == null) {
-                              pendingAmount = pendingAmount.add(bigNumber.from(dbResInFunc.rows[row].trans_amount))
-                            }
-                          }
-                        )
+                        let result = checkChainReceipt(dbResInFunc.rows[row].trans_hash);
+                        if (result == null) {
+                          pendingAmount = pendingAmount.add(bigNumber.from(dbResInFunc.rows[row].trans_amount))
+                        }
                       }
                     }
                   }
@@ -375,10 +393,10 @@ app.post('/api/transfer/', function (req, res, next) {
           })
 
           let ab;
-          contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance //chain specific
-            (result) => {
-              console.log('in LOAD userwallet: show me the result of balance check', result._hex);
-              ab = result.sub(pendingAmount);
+          let ccbResult = checkChainBal(dbRes.rows[0].address);
+
+          console.log('in LOAD userwallet: show me the result of balance check', ccbResult._hex);
+              ab = ccbResult.sub(pendingAmount);
               console.log('ab is ', ab);
               if (ab.lt(bigNumber.from(req.body.amount))) {
 
@@ -393,11 +411,6 @@ app.post('/api/transfer/', function (req, res, next) {
                 let signer = new ethers.Wallet(dbRes.rows[0].private, provider);
                 contractTransfer(signer, res, req, dbRes);
               }
-            },
-            (error) => {
-              console.log('error infor is ', error)
-            }
-          );
 
 
 
