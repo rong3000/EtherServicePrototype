@@ -64,6 +64,50 @@ async function synchBalance(address) {
   );
 }
 
+async function checkAvail(dbRes, res, b, pendingAmount) {
+  let avail = bigNumber.from('0x0');
+  const chainBal = await contract.balanceOf(dbRes.rows[0].address);
+
+      for (row in dbRes.rows) {
+        let a =
+        {
+          'trans_hash': dbRes.rows[row].trans_hash,
+          'trans_status': dbRes.rows[row].trans_status,
+          'trans_amount': dbRes.rows[row].trans_amount
+        }
+        b.push(a);
+        console.log(dbRes.rows[row].trans_hash);
+        console.log(dbRes.rows[row].trans_status);
+        if (dbRes.rows[row].trans_hash != null) {
+          if (dbRes.rows[row].trans_status != 0 || dbRes.rows[row].trans_status != 1) {//null ?? true   => true
+            let txReceipt = await provider.getTransactionReceipt(dbRes.rows[row].trans_hash);
+            console.log('2 and txReceipt is ', txReceipt);
+            if (txReceipt == null) {
+              pendingAmount = pendingAmount.add(bigNumber.from(dbRes.rows[row].trans_amount))
+              console.log('pendingAmount is ', pendingAmount);
+              console.log('actual bal is ', chainBal);
+              avail = chainBal.sub(pendingAmount);
+              console.log('avail bal is ', avail);
+            }
+                
+          }
+        }
+      }
+
+  console.log('3');
+  console.log('avail is ', avail);
+
+  res.send(JSON.stringify({
+    'username': dbRes.rows[0].username,
+    'address': dbRes.rows[0].address,
+    'balance': chainBal._hex,
+    'available balance': avail._hex,
+    'trans': b
+  }));
+
+          
+}
+
 async function synchBalanceReturning(address, res) {
   contract.balanceOf(address).then( //check with chain what's user balance //chain specific
     (result) => {
@@ -203,80 +247,17 @@ app.get('/api/user/:username', function (req, res) {
       } else {
         if (dbRes.rowCount > 0) {
           console.log("user in db");
-          console.log('dbRes.rows', dbRes.rows);
+          // console.log('dbRes.rows', dbRes.rows);
 
           let b = [];
-          let rows = dbRes.rows;
 
           let pendingAmount = bigNumber.from('0x0');
-          
 
-          contract.balanceOf(dbRes.rows[0].address).then( //check with chain what's user balance //chain specific
-            (result) => {
-              console.log('in LOAD userwallet: show me the result of balance check', result._hex);
+          checkAvail(dbRes, res, b, pendingAmount);
 
-              for (row in rows) {
-                console.log('row', row);
-                let a =
-                {
-                  'trans_hash': rows[row].trans_hash,
-                  'trans_status': rows[row].trans_status,
-                  'trans_amount': rows[row].trans_amount
-                }
-                b.push(a);
-                console.log(rows[row].trans_hash);
-                console.log(rows[row].trans_status);
-                if (rows[row].trans_hash != null) {
-                  if (rows[row].trans_status != 0 || rows[row].trans_status != 1) {//null ?? true   => true
-                    provider.getTransactionReceipt(rows[row].trans_hash).then(
-                      (receipRresult) => {
-                        console.log('result1 is ', receipRresult);
-                        if (receipRresult == null) {
-                          console.log('result is null');
-                          pendingAmount = pendingAmount.add(bigNumber.from(rows[row].trans_amount))
-                          console.log('pendingAmount is ', pendingAmount);
-                          console.log('actual bal is ', result);
-                          console.log('avail bal is ', result.sub(pendingAmount));
-                        }
-                      }
-                    )
-                  }
-                }
-              }
-              let finalResult = {
-                "bal": result,
-                "availBal": result.sub(pendingAmount)
-              }
-              return finalResult;
-            },
-            (error) => {
-              res.send(
-                JSON.stringify({
-                  'error': error,
-                  'hint': "balance check fail, please check again"
-                })
-              )
-            }
-          ).then(
-            (result) => {
-              res.send(JSON.stringify({
-                'username': dbRes.rows[0].username,
-                'address': dbRes.rows[0].address,
-                'balance': result.bal._hex,
-                'available balance': result.availBal._hex,
-                'trans': b
-              }));
-  
-              if (result._hex != dbRes.rows[0].balance) {
-                synchBalance(dbRes.rows[0].address);
-              }
-            }
-          )
-
-
-
-
-
+          // if (result._hex != dbRes.rows[0].balance) {
+          //   synchBalance(dbRes.rows[0].address);
+          // }
         }
         else {
           console.log("user not in db, creating new user entry in db...");
