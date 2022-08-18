@@ -64,22 +64,28 @@ async function synchBalance(address) {
   );
 }
 
-async function checkAvail(dbRes, res, b, pendingAmount) {
-  let avail = bigNumber.from('0x0');
-  const chainBal = await contract.balanceOf(dbRes.rows[0].address);
+async function checkAvail(dbRes, res) {
 
-      for (row in dbRes.rows) {
-        let a =
-        {
-          'trans_hash': dbRes.rows[row].trans_hash,
-          'trans_status': dbRes.rows[row].trans_status,
-          'trans_amount': dbRes.rows[row].trans_amount
-        }
-        b.push(a);
-        console.log(dbRes.rows[row].trans_hash);
-        console.log(dbRes.rows[row].trans_status);
-        if (dbRes.rows[row].trans_hash != null) {
-          if (dbRes.rows[row].trans_status != 0 || dbRes.rows[row].trans_status != 1) {//null ?? true   => true
+  let b = [];
+
+  let pendingAmount = bigNumber.from('0x0');
+  let avail = bigNumber.from('0x0');
+  try {
+    const chainBal = await contract.balanceOf(dbRes.rows[0].address);
+
+    for (row in dbRes.rows) {
+      let a =
+      {
+        'trans_hash': dbRes.rows[row].trans_hash,
+        'trans_status': dbRes.rows[row].trans_status,
+        'trans_amount': dbRes.rows[row].trans_amount
+      }
+      b.push(a);
+      console.log(dbRes.rows[row].trans_hash);
+      console.log(dbRes.rows[row].trans_status);
+      if (dbRes.rows[row].trans_hash != null) {
+        if (dbRes.rows[row].trans_status != 0 || dbRes.rows[row].trans_status != 1) {
+          try {
             let txReceipt = await provider.getTransactionReceipt(dbRes.rows[row].trans_hash);
             console.log('2 and txReceipt is ', txReceipt);
             if (txReceipt == null) {
@@ -88,24 +94,41 @@ async function checkAvail(dbRes, res, b, pendingAmount) {
               console.log('actual bal is ', chainBal);
               avail = chainBal.sub(pendingAmount);
               console.log('avail bal is ', avail);
+              console.log('3');
+              console.log('avail is ', avail);
+
+              res.send(JSON.stringify({
+                'username': dbRes.rows[0].username,
+                'address': dbRes.rows[0].address,
+                'balance': chainBal._hex,
+                'available balance': avail._hex,
+                'trans': b
+              }));
             }
-                
+          } catch (error) {
+            console.log(error);
+            res.send(JSON.stringify({
+              'transSubmitted': "fail",
+              'error reason': error.reason,
+              'error code': error.code
+            }));
           }
+
         }
       }
+    }
+  } catch (error) {
+    console.log(error);
+    res.send(JSON.stringify({
+      'transSubmitted': "fail",
+      'error reason': error.reason,
+      'error code': error.code
+    }));
+  }
 
-  console.log('3');
-  console.log('avail is ', avail);
 
-  res.send(JSON.stringify({
-    'username': dbRes.rows[0].username,
-    'address': dbRes.rows[0].address,
-    'balance': chainBal._hex,
-    'available balance': avail._hex,
-    'trans': b
-  }));
 
-          
+
 }
 
 async function synchBalanceReturning(address, res) {
@@ -249,11 +272,8 @@ app.get('/api/user/:username', function (req, res) {
           console.log("user in db");
           // console.log('dbRes.rows', dbRes.rows);
 
-          let b = [];
 
-          let pendingAmount = bigNumber.from('0x0');
-
-          checkAvail(dbRes, res, b, pendingAmount);
+          checkAvail(dbRes, res);
 
           // if (result._hex != dbRes.rows[0].balance) {
           //   synchBalance(dbRes.rows[0].address);
