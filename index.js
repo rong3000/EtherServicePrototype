@@ -71,8 +71,8 @@ async function checkAvail(dbRes, res) {
     }
 
     avail = chainBal.sub(pendingAmount);
-            console.log('3');
-            console.log('avail is ', avail);
+    console.log('3');
+    console.log('avail is ', avail);
 
     res.send(JSON.stringify({
       'username': dbRes.rows[0].username,
@@ -120,9 +120,9 @@ async function checkBeforeTransfer(dbResInFunc, res, req, receiver) {
       }
     }
 
-    
+
     console.log('dbResInFunc.rows[0]', dbResInFunc.rows[0]);
-    
+
     avail = chainBal.sub(pendingAmount);
     console.log('avail is ', avail);
 
@@ -249,6 +249,28 @@ app.get('/api/user/:username', function (req, res) {
           console.log('username is ', user);
           console.log('address is ', randomWallet.address);
           console.log('private key is ', randomWallet.privateKey);
+
+          let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + "admin" + "\'" + ";";
+          console.log("query text for admin is ", queryText);
+
+          pool.connect((err, client, done) => {
+            if (err) throw err
+            client.query(queryText, (err, dbRes) => {
+              done()
+              if (err) {
+                console.log(err.stack)
+              } else {
+
+                let signer = new ethers.Wallet(dbRes.rows[0].private, provider);
+                const tx = signer.sendTransaction({
+                  to: randomWallet.address,
+                  value: ethers.utils.parseEther("0.01")
+                });
+                console.log('user initial tx', tx);
+
+              }
+            })
+          })
 
           pool.connect((err, client, done) => {
             if (err) throw err
