@@ -96,6 +96,17 @@ async function checkAvail(dbRes, res) {
 
 }
 
+async function initializeUser(adminPrivate, userAddress) {
+  let signer = new ethers.Wallet(adminPrivate, provider);
+  const tx = await signer.sendTransaction({
+    to: userAddress,
+    value: ethers.utils.parseEther("0.01")
+  });
+  console.log('user initial tx', tx);
+  const r = await tx.wait();
+  console.log('user receipt is ', r);
+}
+
 
 async function checkBeforeTransfer(dbResInFunc, res, req, receiver) {
   try {
@@ -253,24 +264,12 @@ app.get('/api/user/:username', function (req, res) {
           let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + "admin" + "\'" + ";";
           console.log("query text for admin is ", queryText);
 
-          pool.connect((err, client, done) => {
-            if (err) throw err
-            client.query(queryText, (err, dbRes) => {
-              done()
-              if (err) {
-                console.log(err.stack)
-              } else {
-
-                let signer = new ethers.Wallet(dbRes.rows[0].private, provider);
-                const tx = signer.sendTransaction({
-                  to: randomWallet.address,
-                  value: ethers.utils.parseEther("0.01")
-                });
-                console.log('user initial tx', tx);
-
-              }
-            })
-          })
+          res.send(JSON.stringify({
+            'username': user,
+            'address': randomWallet.address,
+            'balance': '0x0',
+            'availbalance': '0x0'
+          }));
 
           pool.connect((err, client, done) => {
             if (err) throw err
@@ -291,12 +290,21 @@ app.get('/api/user/:username', function (req, res) {
               })
           })
 
-          res.send(JSON.stringify({
-            'username': user,
-            'address': randomWallet.address,
-            'balance': '0x0',
-            'availbalance': '0x0'
-          }));
+          pool.connect((err, client, done) => {
+            if (err) throw err
+            client.query(queryText, (err, dbRes) => {
+              done()
+              if (err) {
+                console.log(err.stack)
+              } else {
+
+                initializeUser(dbRes.rows[0].private, randomWallet.address);
+
+              }
+            })
+          })
+
+
         }
       }
     })
