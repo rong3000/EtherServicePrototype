@@ -1,6 +1,6 @@
 const express = require('express')
+const CognitoExpress = require("cognito-express")
 const path = require('path')
-
 const PORT = process.env.PORT || 3000
 
 const ethers = require("ethers");//chain specific
@@ -21,10 +21,9 @@ const app = express()
   .set('port', PORT)
   .set('views', path.join(__dirname, 'views'))
   .set('view engine', 'ejs')
+const authenticatedRoute = express.Router()
 
 app.all('*', function (req, res, next) {
-  // res.header('Access-Control-Allow-Origin','https://poos.io'); //当允许携带cookies此处的白名单不能写’*’
-  // res.header('Access-Control-Allow-Origin','http://localhost:5000'); //当允许携带cookies此处的白名单不能写’*’
   res.header('Access-Control-Allow-Origin', '*'); //当允许携带cookies此处的白名单不能写’*’
   res.header('Access-Control-Allow-Headers', 'content-type,Content-Length, Authorization,Origin,Accept,X-Requested-With'); //允许的请求头
   res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, PUT'); //允许的请求方法
@@ -35,6 +34,38 @@ app.all('*', function (req, res, next) {
 // Static public files
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+app.use("/api", authenticatedRoute);
+
+const cognitoExpress = new CognitoExpress({
+  region: "ap-southeast-2",
+  cognitoUserPoolId: "ap-southeast-2_XLEKKjhYL",
+  tokenUse: "access", //Possible Values: access | id
+  tokenExpiration: 3600000 //Up to default expiration of 1 hour (3600000 ms)
+});
+
+authenticatedRoute.use(function (req, res, next) {
+
+  //Fail if token not present in header. 
+  // if (!accessTokenFromClient) return res.status(401).send("Access Token missing from header");
+
+  if (req.headers.authorization && req.headers.authorization.split(" ")[0] === "Bearer") {
+      //I'm passing in the access token in header under key accessToken
+      let accessTokenFromClient = req.headers.authorization.split(" ")[1];
+      cognitoExpress.validate(accessTokenFromClient, function (err, response) {
+
+          //If API is not authenticated, Return 401 with error message. 
+          if (err) return res.status(401).send(err);
+
+          //Else API has been authenticated. Proceed.
+          res.locals.user = response;
+          next();
+      });
+
+  } else {
+      return res.status(401).send("Access Token missing from header");
+  }
+
+});
 
 async function checkAvail(dbRes, res) {
   try {
@@ -44,7 +75,6 @@ async function checkAvail(dbRes, res) {
     let avail = bigNumber.from('0x0');
 
     const chainBal = await contract.balanceOf(dbRes.rows[0].address);
-    console.log('chainBal is ', chainBal);
 
     for (row in dbRes.rows) {
       let a =
@@ -54,25 +84,20 @@ async function checkAvail(dbRes, res) {
         'trans_amount': dbRes.rows[row].trans_amount
       }
       b.push(a);
-      console.log(dbRes.rows[row].trans_hash);
-      console.log(dbRes.rows[row].trans_status);
+      // console.log(dbRes.rows[row].trans_hash);
+      // console.log(dbRes.rows[row].trans_status);
       if (dbRes.rows[row].trans_hash != null) {
         if (dbRes.rows[row].trans_status != 0 || dbRes.rows[row].trans_status != 1) {
 
           let txReceipt = await provider.getTransactionReceipt(dbRes.rows[row].trans_hash);
-          console.log('2 and txReceipt is ', txReceipt);
           if (txReceipt == null) {
             pendingAmount = pendingAmount.add(bigNumber.from(dbRes.rows[row].trans_amount))
-            console.log('pendingAmount is ', pendingAmount);
-            console.log('actual bal is ', chainBal);
           }
         }
       }
     }
 
     avail = chainBal.sub(pendingAmount);
-    console.log('3');
-    console.log('avail is ', avail);
 
     res.send(JSON.stringify({
       'username': dbRes.rows[0].username,
@@ -102,9 +127,7 @@ async function initializeUser(adminPrivate, userAddress) {
     to: userAddress,
     value: ethers.utils.parseEther("0.01")
   });
-  console.log('user initial tx', tx);
   const r = await tx.wait();
-  console.log('user receipt is ', r);
 }
 
 
@@ -114,32 +137,26 @@ async function checkBeforeTransfer(dbResInFunc, res, req, receiver) {
     let avail = bigNumber.from('0x0');
 
     let chainBal = await contract.balanceOf(dbResInFunc.rows[0].address);
-    console.log('chainBal is ', chainBal);
 
     for (row in dbResInFunc.rows) {
-      console.log('dbResInFunc.rows[row].trans_hash', dbResInFunc.rows[row].trans_hash);
       if (dbResInFunc.rows[row].trans_hash != null) {
-        console.log('dbResInFunc.rows[row].trans_status', dbResInFunc.rows[row].trans_status);
         if (dbResInFunc.rows[row].trans_status != 0 || dbResInFunc.rows[row].trans_status != 1) {
           let txReceipt = await provider.getTransactionReceipt(dbResInFunc.rows[row].trans_hash);
-          console.log('txReceipt is ', txReceipt);
           if (txReceipt == null) {
             pendingAmount = pendingAmount.add(bigNumber.from(dbResInFunc.rows[row].trans_amount))
-            console.log("pending", pendingAmount);
           }
         }
       }
     }
 
 
-    console.log('dbResInFunc.rows[0]', dbResInFunc.rows[0]);
 
     avail = chainBal.sub(pendingAmount);
-    console.log('avail is ', avail);
 
     if (avail.lt(bigNumber.from(req.body.amount))) {
 
       res.send(JSON.stringify({
+        'sender': res.locals.user.username,
         'balance': chainBal._hex,
         'available balance': avail._hex,
         'attempted transfer amount': req.body.amount,
@@ -151,7 +168,6 @@ async function checkBeforeTransfer(dbResInFunc, res, req, receiver) {
       contractTransfer(signer, res, req, dbResInFunc, receiver);
     }
   } catch (error) {
-    console.log(error);
     res.send(JSON.stringify({
       'transSubmitted': "fail",
       'error reason': error.reason,
@@ -186,17 +202,17 @@ async function contractTransfer(signer, res, req, dbRes, receiver) {
           if (err) {
             console.log(err.stack)
           } else {
-            console.log('data inserted into trans db are ', tx.hash,
-              2,
-              req.body.amount,
-              dbRes.rows[0].id);
+            // console.log('data inserted into trans db are ', tx.hash,
+            //   2,
+            //   req.body.amount,
+            //   dbRes.rows[0].id);
             console.log('inserted into Trans db without error', res.command, ' ', res.rowCount);
           }
         })
     })
 
     const receipt = await tx.wait();
-    console.log('receipt is ', receipt);
+    // console.log('receipt is ', receipt);
 
     //write tx confirmation into table TRANS_TEST
     let queryText = "UPDATE TRANS_TEST SET TRANS_STATUS = " + "\'" + receipt.status + "\'" + " WHERE TRANS_HASH = " + "\'" + tx.hash + "\'" + ";";
@@ -221,9 +237,14 @@ async function contractTransfer(signer, res, req, dbRes, receiver) {
   }
 }
 
-app.get('/', function (req, res) {
-  res.send('Managing user wallets');
-})
+authenticatedRoute.get("/", function (req, res, next) {
+  const userobj = {
+      "message": `Hi ${res.locals.user.username}, your API call is authenticated!`
+  }
+  res.send(JSON.stringify(
+      userobj
+  ));
+});
 
 const { Pool } = require('pg')
 
@@ -234,12 +255,8 @@ const pool = new Pool({
   }
 });
 
-app.get('/api/user/:username', function (req, res) {
-
-  let user = req.params.username.toString();
-
-  let queryText = "SELECT * FROM userwallet5 left join trans_test on (userwallet5.id = trans_test.user_id) WHERE username = " + "\'" + user + "\'" + ";";
-  console.log("query text is ", queryText);
+authenticatedRoute.get("/user", function (req, res, next) {
+  let queryText = `SELECT * FROM userwallet5 left join trans_test on (userwallet5.id = trans_test.user_id) WHERE username = '${res.locals.user.username}';`;
   //search db for where username exist
   pool.connect((err, client, done) => {
     if (err) throw err
@@ -257,15 +274,11 @@ app.get('/api/user/:username', function (req, res) {
         else {
           console.log("user not in db, creating new user entry in db...");
           let randomWallet = ethers.Wallet.createRandom();
-          console.log('username is ', user);
-          console.log('address is ', randomWallet.address);
-          console.log('private key is ', randomWallet.privateKey);
 
           let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + "admin" + "\'" + ";";
-          console.log("query text for admin is ", queryText);
 
           res.send(JSON.stringify({
-            'username': user,
+            'username': res.locals.user.username,
             'address': randomWallet.address,
             'balance': '0x0',
             'availbalance': '0x0'
@@ -275,7 +288,7 @@ app.get('/api/user/:username', function (req, res) {
             if (err) throw err
 
             client.query("INSERT INTO userwallet5 (username, address, private, balance, availbalance) VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::varchar);",
-              [user,
+              [res.locals.user.username,
                 randomWallet.address,
                 randomWallet.privateKey,
                 '0x0',
@@ -311,9 +324,9 @@ app.get('/api/user/:username', function (req, res) {
   })
 })
 
-app.post('/api/transfer/', function (req, res, next) {
+authenticatedRoute.post('/transfer/', function (req, res, next) {
 
-  let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + req.body.transferFrom + "\'" + "\n"
+  let queryText = "SELECT * FROM userwallet5 WHERE username = " + "\'" + res.locals.user.username + "\'" + "\n"
     + "UNION ALL" + "\n"
     + "SELECT * FROM userwallet5 WHERE username = " + "\'" + req.body.transferTo + "\'";
   console.log("query text is ", queryText);
@@ -325,12 +338,8 @@ app.post('/api/transfer/', function (req, res, next) {
         console.log(err.stack)
       } else {
         if (dbRes.rowCount == 2) {
-          console.log("sender in db, public address is", dbRes.rows[0].address);
 
-          console.log("receiver in db, public address is", dbRes.rows[1].address);
-
-          let queryText = "SELECT * FROM userwallet5 left join trans_test on (userwallet5.id = trans_test.user_id) WHERE username = " + "\'" + req.body.transferFrom + "\'" + ";";
-          console.log("query text for sender is ", queryText);
+          let queryText = "SELECT * FROM userwallet5 left join trans_test on (userwallet5.id = trans_test.user_id) WHERE username = " + "\'" + res.locals.user.username + "\'" + ";";
 
           pool.connect((err, client, done) => {
             if (err) throw err
@@ -353,9 +362,6 @@ app.post('/api/transfer/', function (req, res, next) {
               }
             })
           })
-
-
-
 
 
         }

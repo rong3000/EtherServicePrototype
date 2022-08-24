@@ -10,6 +10,7 @@
   "author": "Alex Atallah <alex.atallah@opensea.io>",
   "license": "MIT",
   "dependencies": {
+    "cognito-express": "^3.0.1",
     "ejs": "^2.6.1",
     "ethers": "^5.5.2",
     "express": "^4.16.4",
