@@ -27,19 +27,19 @@ personal.unlockAccount(acc)
 
 personal.unlockAccount(eth.accounts[1])
 
-personal.newAccount()：创建账户；
-personal.unlockAccount()：解锁账户；
-eth.accounts：枚举系统中的账户；
-eth.getBalance()：查看账户余额，返回值的单位是 Wei（Wei 是以太坊中最小货币面额单位，类似比特币中的聪，1 ether = 10^18 Wei）；
-eth.blockNumber：列出区块总数；
-eth.getTransaction()：获取交易；
-eth.getBlock()：获取区块；
-miner.start()：开始挖矿；
-miner.stop()：停止挖矿；
-web3.fromWei()：Wei 换算成以太币；
-web3.toWei()：以太币换算成 Wei；
-txpool.status：交易池中的状态；
-admin.addPeer()：连接到其他节点
+personal.newAccount()：
+personal.unlockAccount()：
+eth.accounts：
+eth.getBalance()：check balance, returning unit Wei（1 ether = 10^18 Wei）；
+eth.blockNumber：
+eth.getTransaction()：
+eth.getBlock()：
+miner.start()：
+miner.stop()：
+web3.fromWei()：Wei to ether
+web3.toWei()：ether to Wei；
+txpool.status：
+admin.addPeer()：
 
 personal.newAccount()
 eth.accounts

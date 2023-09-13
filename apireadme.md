@@ -1,6 +1,4 @@
-在库里面现在有两张表 USERWALLET5 和trans_test
-一个表有用户钱包地址 钱包私钥 和余额 以及可用余额
-另一个表是所有的交易信息，带有交易号，交易是否已经在链上确认，交易金额
+In the database, there are currently two tables, USERWALLET5 and trans_test. One table contains user wallet addresses, wallet private keys, balances, and available balances. The other table contains all transaction information, including transaction ID, whether the transaction has been confirmed on the blockchain, and transaction amount.
 
                                       Table "public.userwallet5"
     Column    |         Type          | Collation | Nullable |                 Default
@@ -33,7 +31,7 @@ post api
 https://protouserwallet.herokuapp.com/api/transfer/
 
 
-数据格式
+data format
 {
     "transferFrom": "admin",
     "transferTo": "ab",
@@ -42,8 +40,9 @@ https://protouserwallet.herokuapp.com/api/transfer/
 
 get api
 https://protouserwallet.herokuapp.com/api/user/ + username
-这个api现在可以返回用户所有交易信息，加上经过计算的可用余额，交易信息里面有链上确认和未链上确认的交易，未确认的部分就是可用余额和实际链上余额的差值
+This API can currently return all transaction information for a user, along with the calculated available balance. The transaction information includes both confirmed and unconfirmed transactions. The unconfirmed portion represents the difference between the available balance and the actual balance on the blockchain.
 
+The API endpoint is as follows: https://protouserwallet.herokuapp.com/api/synchbalance/ + username
 
-https://protouserwallet.herokuapp.com/api/synchbalance/ + username
-这个api强制抓取链上余额并同步到db的余额，大部分时候用不上，因为交易一经确认已经有对应的逻辑把链上余额同步到db，但是如果一种情况是后台崩溃的时候会错过同步或者防止链上信息因为莫名其妙的原因没有被捕捉到
+This API is designed to forcibly fetch the on-chain balance and synchronize it with the balance in the database. Most of the time, this API is not needed because once a transaction is confirmed, there is corresponding logic to synchronize the on-chain balance with the database. However, there are situations where this API can be useful, such as when a backend crash occurs, which may result in missing synchronization, or to prevent scenarios where on-chain information is not captured for unexplained reasons.
+
